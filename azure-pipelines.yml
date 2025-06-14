@@ -6,6 +6,10 @@ variables:
   location: 'westeurope'
   templateFile: './main.bicep'
   adminUN: 'azureuser'
+  # Belangrijk: Sla wachtwoorden en andere secrets op in een Azure Key Vault 
+  # of als een 'secret variable' in de pipeline settings.
+  # Gebruik nooit platte tekst wachtwoorden in je code!
+  # adminPASS: $(een-secret-variabele-naam) 
 
 stages:
 
@@ -54,48 +58,59 @@ stages:
             --template-file $(templateFile) \
             --parameters adminUsername="$(adminUN)" adminPassword="$(adminPASS)" || true
 
+# --- BEGIN VAN DE WIJZIGING ---
+
 - stage: Deploy
   displayName: 'Deploy Infrastructure'
   dependsOn: Test
   condition: succeeded()
   jobs:
-  - job: DeployVM
+  # We veranderen 'job' naar 'deployment' om een Environment te kunnen gebruiken.
+  - deployment: DeployVM
     displayName: 'Deploy Windows VM'
     pool:
       vmImage: 'ubuntu-latest'
-    steps:
-    - task: AzureCLI@2
-      displayName: 'Deploy Bicep'
-      inputs:
-        azureSubscription: 'azure-connection'
-        scriptType: bash
-        scriptLocation: inlineScript
-        useGlobalConfig: false
-        inlineScript: |
-          echo "Creating resource group..."
-          az group create --name $(resourceGroupName) --location $(location)
+    # Hier koppelen we de job aan de Environment die we hebben aangemaakt.
+    # Zorg dat de naam exact overeenkomt met de naam in Azure DevOps!
+    environment: 'Production' 
+    strategy:
+      # De standaard 'runOnce' strategie is prima voor dit scenario.
+      runOnce:
+        deploy:
+          steps:
+          - task: AzureCLI@2
+            displayName: 'Deploy Bicep'
+            inputs:
+              azureSubscription: 'azure-connection'
+              scriptType: bash
+              scriptLocation: inlineScript
+              useGlobalConfig: false
+              inlineScript: |
+                echo "Creating resource group..."
+                az group create --name $(resourceGroupName) --location $(location)
 
-          echo "Starting deployment..."
-          az deployment group create \
-            --resource-group $(resourceGroupName) \
-            --template-file $(templateFile) \
-            --parameters adminUsername="$(adminUN)" adminPassword="$(adminPASS)"
+                echo "Starting deployment..."
+                az deployment group create \
+                  --resource-group $(resourceGroupName) \
+                  --template-file $(templateFile) \
+                  --parameters adminUsername="$(adminUN)" adminPassword="$(adminPASS)"
 
-    - task: AzureCLI@2
-      displayName: 'Post-deployment: Check VM State'
-      inputs:
-        azureSubscription: 'azure-connection'
-        scriptType: bash
-        scriptLocation: inlineScript
-        useGlobalConfig: false
-        inlineScript: |
-          echo "Checking VM status..."
-          vmState=$(az vm get-instance-view --name win-vm --resource-group $(resourceGroupName) --query "instanceView.statuses[?starts_with(code,'PowerState/')].displayStatus" -o tsv)
-          echo "VM Status: $vmState"
+          - task: AzureCLI@2
+            displayName: 'Post-deployment: Check VM State'
+            inputs:
+              azureSubscription: 'azure-connection'
+              scriptType: bash
+              scriptLocation: inlineScript
+              useGlobalConfig: false
+              inlineScript: |
+                echo "Checking VM status..."
+                vmState=$(az vm get-instance-view --name win-vm --resource-group $(resourceGroupName) --query "instanceView.statuses[?starts_with(code,'PowerState/')].displayStatus" -o tsv)
+                echo "VM Status: $vmState"
 
-          if [ "$vmState" != "VM running" ]; then
-            echo "VM is not running!"
-            exit 1
-          fi
+                if [ "$vmState" != "VM running" ]; then
+                  echo "VM is not running!"
+                  exit 1
+                fi
 
-          echo "VM is running."
+                echo "VM is running."
+# --- EINDE VAN DE WIJZIGING ---
