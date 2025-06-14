@@ -65,19 +65,18 @@ stages:
   dependsOn: Test
   condition: succeeded()
   jobs:
-  # We veranderen 'job' naar 'deployment' om een Environment te kunnen gebruiken.
   - deployment: DeployVM
     displayName: 'Deploy Windows VM'
     pool:
       vmImage: 'ubuntu-latest'
-    # Hier koppelen we de job aan de Environment die we hebben aangemaakt.
-    # Zorg dat de naam exact overeenkomt met de naam in Azure DevOps!
     environment: 'Production' 
     strategy:
-      # De standaard 'runOnce' strategie is prima voor dit scenario.
       runOnce:
         deploy:
           steps:
+          # VOEG DEZE REGEL TOE:
+          - checkout: self 
+
           - task: AzureCLI@2
             displayName: 'Deploy Bicep'
             inputs:
