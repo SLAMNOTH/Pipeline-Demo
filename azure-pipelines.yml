@@ -5,19 +5,17 @@ variables:
   resourceGroupName: 'JUICT-TESTING'
   location: 'westeurope'
   templateFile: './main.bicep'
-  adminUN: 'azureuser'
-  # Belangrijk: Sla wachtwoorden en andere secrets op in een Azure Key Vault 
-  # of als een 'secret variable' in de pipeline settings.
-  # Gebruik nooit platte tekst wachtwoorden in je code!
-  # adminPASS: $(een-secret-variabele-naam) 
+  adminUN: 'azureuser' 
+  # Hier staat de username van de VM die aangemaakt wordt in de pipeline,
+  # dit om te bewijzen dat Bicep daadwerkelijk variabelen gebruikt uit de pipeline
 
 stages:
 
 - stage: Build
   displayName: 'Build fase'
   jobs:
-  - job: ValidateBicep
-    displayName: 'Validate Bicep Syntax'
+  - job: ValidateBicepCode
+    displayName: 'Validate Bicep Code JUICT'
     pool:
       vmImage: 'ubuntu-latest'
     steps:
@@ -31,7 +29,7 @@ stages:
         scriptLocation: inlineScript
         useGlobalConfig: false
         inlineScript: |
-          echo "Validating Bicep template syntax..."
+          echo "Validating Bicep code voor JUICT..."
           az bicep build --file $(templateFile)
 
 - stage: Test
@@ -52,16 +50,16 @@ stages:
         scriptLocation: inlineScript
         useGlobalConfig: false
         inlineScript: |
-          echo "Performing what-if deployment..."
+          echo "Uitvoeren van what-if deployment check..."
           az deployment group what-if \
             --resource-group $(resourceGroupName) \
             --template-file $(templateFile) \
             --parameters adminUsername="$(adminUN)" adminPassword="$(adminPASS)" || true
-
-# --- BEGIN VAN DE WIJZIGING ---
+              # Hier wordt het admin password opgeroepen. Deze staat in de variabelen van de pipline, gemarkeerd als secret.
+              # Note: In pipeline demo 2 wordt gebruik gemaakt een Azure Key Vault voor secrets.
 
 - stage: Deploy
-  displayName: 'Deploy Infrastructure'
+  displayName: 'Deploy Infrastructuur'
   dependsOn: Test
   condition: succeeded()
   jobs:
@@ -74,9 +72,7 @@ stages:
       runOnce:
         deploy:
           steps:
-          # VOEG DEZE REGEL TOE:
           - checkout: self 
-
           - task: AzureCLI@2
             displayName: 'Deploy Bicep'
             inputs:
@@ -95,7 +91,7 @@ stages:
                   --parameters adminUsername="$(adminUN)" adminPassword="$(adminPASS)"
 
           - task: AzureCLI@2
-            displayName: 'Post-deployment: Check VM State'
+            displayName: 'Post-deployment: Check VM Status'
             inputs:
               azureSubscription: 'azure-connection'
               scriptType: bash
@@ -107,9 +103,9 @@ stages:
                 echo "VM Status: $vmState"
 
                 if [ "$vmState" != "VM running" ]; then
-                  echo "VM is not running!"
+                  echo "VM is niet online!"
                   exit 1
                 fi
 
-                echo "VM is running."
-# --- EINDE VAN DE WIJZIGING ---
+                echo "VM is online."
+
